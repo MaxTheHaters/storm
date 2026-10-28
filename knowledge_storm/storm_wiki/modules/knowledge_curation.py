@@ -11,6 +11,7 @@ from .persona_generator import StormPersonaGenerator
 from .storm_dataclass import DialogueTurn, StormInformationTable
 from ...interface import KnowledgeCurationModule, Retriever, Information
 from ...utils import ArticleTextProcessing
+from ...codex_backend import CodexBackendError
 
 try:
     from streamlit.runtime.scriptrunner import add_script_run_ctx
@@ -126,7 +127,8 @@ class WikiWriter(dspy.Module):
 
 
 class AskQuestion(dspy.Signature):
-    """You are an experienced Wikipedia writer. You are chatting with an expert to get information for the topic you want to contribute. Ask good questions to get more useful information relevant to the topic.
+    """For a Chinese topic, ask in Traditional Chinese (zh-TW); otherwise use the topic language. Keep the exact English termination phrase above.
+    You are an experienced Wikipedia writer. You are chatting with an expert to get information for the topic you want to contribute. Ask good questions to get more useful information relevant to the topic.
     When you have no more question to ask, say "Thank you so much for your help!" to end the conversation.
     Please only ask a question at a time and don't ask what you have asked before. Your questions should be related to the topic you want to write.
     """
@@ -137,7 +139,8 @@ class AskQuestion(dspy.Signature):
 
 
 class AskQuestionWithPersona(dspy.Signature):
-    """You are an experienced Wikipedia writer and want to edit a specific page. Besides your identity as a Wikipedia writer, you have specific focus when researching the topic.
+    """For a Chinese topic, ask in Traditional Chinese (zh-TW); otherwise use the topic language. Keep the exact English termination phrase above.
+    You are an experienced Wikipedia writer and want to edit a specific page. Besides your identity as a Wikipedia writer, you have specific focus when researching the topic.
     Now, you are chatting with an expert to get information. Ask good questions to get more useful information.
     When you have no more question to ask, say "Thank you so much for your help!" to end the conversation.
     Please only ask a question at a time and don't ask what you have asked before. Your questions should be related to the topic you want to write.
@@ -152,7 +155,8 @@ class AskQuestionWithPersona(dspy.Signature):
 
 
 class QuestionToQuery(dspy.Signature):
-    """You want to answer the question using Google search. What do you type in the search box?
+    """For a Chinese topic, include useful Traditional Chinese and English search queries, retaining English proper names. Never invent sources or URLs.
+    You want to answer the question using Google search. What do you type in the search box?
     Write the queries you will use in the following format:
     - query 1
     - query 2
@@ -165,7 +169,8 @@ class QuestionToQuery(dspy.Signature):
 
 
 class AnswerQuestion(dspy.Signature):
-    """You are an expert who can use information effectively. You are chatting with a Wikipedia writer who wants to write a Wikipedia page on topic you know. You have gathered the related information and will now use the information to form a response.
+    """For a Chinese topic, answer in Traditional Chinese (zh-TW); otherwise use the topic language. Use only supplied information and its citation indices; never invent sources, URLs, or citations.
+    You are an expert who can use information effectively. You are chatting with a Wikipedia writer who wants to write a Wikipedia page on topic you know. You have gathered the related information and will now use the information to form a response.
     Make your response as informative as possible, ensuring that every sentence is supported by the gathered information. If the [gathered information] is not directly related to the [topic] or [question], provide the most relevant answer based on the available information. If no appropriate answer can be formulated, respond with, “I cannot answer this question based on the available information,” and explain any limitations or gaps.
     """
 
@@ -206,13 +211,13 @@ class TopicExpert(dspy.Module):
             # Identify: Break down question into queries.
             queries = self.generate_queries(topic=topic, question=question).queries
             queries = [
-                q.replace("-", "").strip().strip('"').strip('"').strip()
+                q.strip().removeprefix("-").strip().strip('"').strip()
                 for q in queries.split("\n")
             ]
-            queries = queries[: self.max_search_queries]
+            queries = [q for q in queries if q][: self.max_search_queries]
             # Search
             searched_results: List[Information] = self.retriever.retrieve(
-                list(set(queries)), exclude_urls=[ground_truth_url]
+                list(dict.fromkeys(queries)), exclude_urls=[ground_truth_url]
             )
             if len(searched_results) > 0:
                 # Evaluate: Simplify this part by directly using the top 1 snippet.
@@ -232,6 +237,8 @@ class TopicExpert(dspy.Module):
                     answer = ArticleTextProcessing.remove_uncompleted_sentences_with_citations(
                         answer
                     )
+                except CodexBackendError:
+                    raise
                 except Exception as e:
                     logging.error(f"Error occurs when generating answer: {e}")
                     answer = "Sorry, I cannot answer this question. Please ask another question."

@@ -3,12 +3,19 @@ import time
 
 import demo_util
 import streamlit as st
+from i18n import translate
+from knowledge_storm.topic_validation import validate_topic
+from knowledge_storm.codex_backend import CodexBackendError
 from demo_util import (
     DemoFileIOHelper,
     DemoTextProcessingHelper,
     DemoUIHelper,
     truncate_filename,
 )
+
+
+def t(key, **kwargs):
+    return translate(key, st.session_state.get("language", "zh-TW"), **kwargs)
 
 
 def handle_not_started():
@@ -18,7 +25,7 @@ def handle_not_started():
             with st.form(key="search_form"):
                 # Text input for the search topic
                 DemoUIHelper.st_markdown_adjust_size(
-                    content="Enter the topic you want to learn in depth:", font_size=18
+                    content=t("topic_prompt"), font_size=18
                 )
                 st.session_state["page3_topic"] = st.text_input(
                     label="page3_topic", label_visibility="collapsed"
@@ -26,17 +33,16 @@ def handle_not_started():
                 pass_appropriateness_check = True
 
                 # Submit button for the form
-                submit_button = st.form_submit_button(label="Research")
+                submit_button = st.form_submit_button(label=t("research"))
                 # only start new search when button is clicked, not started, or already finished previous one
                 if submit_button and st.session_state["page3_write_article_state"] in [
                     "not started",
                     "show results",
                 ]:
-                    if not st.session_state["page3_topic"].strip():
+                    problem = validate_topic(st.session_state["page3_topic"])
+                    if problem:
                         pass_appropriateness_check = False
-                        st.session_state["page3_warning_message"] = (
-                            "topic could not be empty"
-                        )
+                        st.session_state["page3_warning_message"] = t(problem)
 
                     st.session_state["page3_topic_name_cleaned"] = (
                         st.session_state["page3_topic"]
@@ -63,8 +69,8 @@ def handle_initiated():
         if not os.path.exists(current_working_dir):
             os.makedirs(current_working_dir)
 
-        if "runner" not in st.session_state:
-            demo_util.set_storm_runner()
+        # New attempts must not reuse an old client timeout or failed LM history.
+        demo_util.set_storm_runner()
         st.session_state["page3_current_working_dir"] = current_working_dir
         st.session_state["page3_write_article_state"] = "pre_writing"
 
@@ -72,7 +78,7 @@ def handle_initiated():
 def handle_pre_writing():
     if st.session_state["page3_write_article_state"] == "pre_writing":
         status = st.status(
-            "I am brain**STORM**ing now to research the topic. (This may take 2-3 minutes.)"
+            t("researching")
         )
         st_callback_handler = demo_util.StreamlitCallbackHandler(status)
         with status:
@@ -94,17 +100,17 @@ def handle_pre_writing():
                 DemoFileIOHelper.read_json_file(conversation_log_path)
             )
             st.session_state["page3_write_article_state"] = "final_writing"
-            status.update(label="brain**STORM**ing complete!", state="complete")
+            status.update(label=t("research_done"), state="complete")
 
 
 def handle_final_writing():
     if st.session_state["page3_write_article_state"] == "final_writing":
         # polish final article
         with st.status(
-            "Now I will connect the information I found for your reference. (This may take 4-5 minutes.)"
+            t("writing")
         ) as status:
             st.info(
-                "Now I will connect the information I found for your reference. (This may take 4-5 minutes.)"
+                t("writing")
             )
             st.session_state["runner"].run(
                 topic=st.session_state["page3_topic"],
@@ -119,14 +125,14 @@ def handle_final_writing():
 
             # update status bar
             st.session_state["page3_write_article_state"] = "prepare_to_show_result"
-            status.update(label="information snythesis complete!", state="complete")
+            status.update(label=t("writing_done"), state="complete")
 
 
 def handle_prepare_to_show_result():
     if st.session_state["page3_write_article_state"] == "prepare_to_show_result":
         _, show_result_col, _ = st.columns([4, 3, 4])
         with show_result_col:
-            if st.button("show final article"):
+            if st.button(t("show_article")):
                 st.session_state["page3_write_article_state"] = "completed"
                 st.rerun()
 
@@ -156,12 +162,25 @@ def create_new_article_page():
 
     handle_not_started()
 
-    handle_initiated()
-
-    handle_pre_writing()
-
-    handle_final_writing()
-
-    handle_prepare_to_show_result()
-
-    handle_completed()
+    try:
+        handle_initiated()
+        handle_pre_writing()
+        handle_final_writing()
+        handle_prepare_to_show_result()
+        handle_completed()
+    except CodexBackendError as exc:
+        st.error(t(exc.code))
+        if exc.diagnostic_file:
+            st.caption(t("codex_diagnostic", path=exc.diagnostic_file))
+        st.session_state["page3_write_article_state"] = "not started"
+    except ValueError as exc:
+        if str(exc) == t("config_error"):
+            st.error(t("config_error"))
+        else:
+            st.error(t("error"))
+        st.session_state["page3_write_article_state"] = "not started"
+    except Exception:
+        import logging
+        logging.exception("STORM research failed")
+        st.error(t("error"))
+        st.session_state["page3_write_article_state"] = "not started"

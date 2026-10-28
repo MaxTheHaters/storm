@@ -54,7 +54,8 @@ class FindRelatedTopic(dspy.Signature):
 
 
 class GenPersona(dspy.Signature):
-    """You need to select a group of Wikipedia editors who will work together to create a comprehensive article on the topic. Each of them represents a different perspective, role, or affiliation related to this topic. You can use other Wikipedia pages of related topics for inspiration. For each editor, add a description of what they will focus on.
+    """For a Chinese topic, write the personas and descriptions in Traditional Chinese (zh-TW); otherwise use the topic language. Retain English proper names when appropriate.
+    You need to select a group of Wikipedia editors who will work together to create a comprehensive article on the topic. Each of them represents a different perspective, role, or affiliation related to this topic. You can use other Wikipedia pages of related topics for inspiration. For each editor, add a description of what they will focus on.
     Give your answer in the following format: 1. short summary of editor 1: description\n2. short summary of editor 2: description\n...
     """
 
@@ -68,16 +69,20 @@ class GenPersona(dspy.Signature):
 class CreateWriterWithPersona(dspy.Module):
     """Discover different perspectives of researching the topic by reading Wikipedia pages of related topics."""
 
-    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
+    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel], use_related_topics=True):
         super().__init__()
         self.find_related_topic = dspy.ChainOfThought(FindRelatedTopic)
         self.gen_persona = dspy.ChainOfThought(GenPersona)
         self.engine = engine
+        self.use_related_topics = use_related_topics
 
     def forward(self, topic: str, draft=None):
         with dspy.settings.context(lm=self.engine):
             # Get section names from wiki pages of relevant topics for inspiration.
-            related_topics = self.find_related_topic(topic=topic).related_topics
+            related_topics = (
+                self.find_related_topic(topic=topic).related_topics
+                if self.use_related_topics else ""
+            )
             urls = []
             for s in related_topics.split("\n"):
                 if "http" in s:
@@ -128,8 +133,10 @@ class StormPersonaGenerator:
             personas. It must be an instance of either `dspy.dsp.LM` or `dspy.dsp.HFModel`.
     """
 
-    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel]):
-        self.create_writer_with_persona = CreateWriterWithPersona(engine=engine)
+    def __init__(self, engine: Union[dspy.dsp.LM, dspy.dsp.HFModel], use_related_topics=True):
+        self.create_writer_with_persona = CreateWriterWithPersona(
+            engine=engine, use_related_topics=use_related_topics
+        )
 
     def generate_persona(self, topic: str, max_num_persona: int = 3) -> List[str]:
         """
@@ -149,6 +156,10 @@ class StormPersonaGenerator:
                 and up to `max_num_persona` additional personas generated based on the topic.
         """
         personas = self.create_writer_with_persona(topic=topic)
-        default_persona = "Basic fact writer: Basic fact writer focusing on broadly covering the basic facts about the topic."
+        default_persona = (
+            "基礎事實研究者: 廣泛了解主題的基本事實。"
+            if re.search(r"[\u3400-\u9fff]", topic)
+            else "Basic fact writer: Basic fact writer focusing on broadly covering the basic facts about the topic."
+        )
         considered_personas = [default_persona] + personas.personas[:max_num_persona]
         return considered_personas

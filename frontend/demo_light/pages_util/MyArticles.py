@@ -4,6 +4,11 @@ import demo_util
 import streamlit as st
 from demo_util import DemoFileIOHelper, DemoUIHelper
 from streamlit_card import card
+from i18n import translate
+
+
+def t(key, **kwargs):
+    return translate(key, st.session_state.get("language", "zh-TW"), **kwargs)
 
 
 # set page config and display title
@@ -12,7 +17,7 @@ def my_articles_page():
         _, return_button_col = st.columns([2, 5])
         with return_button_col:
             if st.button(
-                "Select another article",
+                t("back"),
                 disabled="page2_selected_my_article" not in st.session_state,
             ):
                 if "page2_selected_my_article" in st.session_state:
@@ -23,9 +28,11 @@ def my_articles_page():
     if "page2_user_articles_file_path_dict" not in st.session_state:
         local_dir = os.path.join(demo_util.get_demo_dir(), "DEMO_WORKING_DIR")
         os.makedirs(local_dir, exist_ok=True)
-        st.session_state["page2_user_articles_file_path_dict"] = (
-            DemoFileIOHelper.read_structure_to_dict(local_dir)
-        )
+        files = DemoFileIOHelper.read_structure_to_dict(local_dir)
+        st.session_state["page2_user_articles_file_path_dict"] = {
+            name: paths for name, paths in files.items()
+            if "storm_gen_article.txt" in paths or "storm_gen_article_polished.txt" in paths
+        }
 
     # if no feature demo selected, display all featured articles as info cards
     def article_card_setup(column_to_add, card_title, article_name):
@@ -55,18 +62,18 @@ def my_articles_page():
             pagination = st.container()
             bottom_menu = st.columns((1, 4, 1, 1, 1))[1:-1]
             with bottom_menu[2]:
-                batch_size = st.selectbox("Page Size", options=[24, 48, 72])
+                batch_size = st.selectbox(t("page_size"), options=[24, 48, 72])
             with bottom_menu[1]:
                 total_pages = (
-                    int(len(article_names) / batch_size)
-                    if int(len(article_names) / batch_size) > 0
+                    int((len(article_names) + batch_size - 1) / batch_size)
+                    if int((len(article_names) + batch_size - 1) / batch_size) > 0
                     else 1
                 )
                 current_page = st.number_input(
-                    "Page", min_value=1, max_value=total_pages, step=1
+                    t("page"), min_value=1, max_value=total_pages, step=1
                 )
             with bottom_menu[0]:
-                st.markdown(f"Page **{current_page}** of **{total_pages}** ")
+                st.markdown(t("page_count", current=current_page, total=total_pages))
             # show article cards
             with pagination:
                 my_article_count = 0
@@ -77,14 +84,14 @@ def my_articles_page():
                     my_article_count += 1
                     article_card_setup(
                         column_to_add=column_to_add,
-                        card_title=["My Article"],
+                        card_title=[t("my_article")],
                         article_name=article_name,
                     )
         else:
             with my_article_columns[0]:
                 hasClicked = card(
-                    title="Get started",
-                    text="Start your first research!",
+                    title=t("start"),
+                    text=t("first_research"),
                     image=DemoFileIOHelper.read_image_as_base64(
                         os.path.join(demo_util.get_demo_dir(), "assets", "void.jpg")
                     ),

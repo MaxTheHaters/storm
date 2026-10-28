@@ -9,6 +9,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from ...interface import Information, InformationTable, Article, ArticleSectionNode
 from ...utils import ArticleTextProcessing, FileIOHelper
+from ...codex_backend import merge_source_metadata
 
 
 class DialogueTurn:
@@ -73,8 +74,11 @@ class StormInformationTable(InformationTable):
                 for storm_info in turn.search_results:
                     if storm_info.url in url_to_info:
                         url_to_info[storm_info.url].snippets.extend(storm_info.snippets)
+                        url_to_info[storm_info.url].meta = merge_source_metadata(
+                            url_to_info[storm_info.url].meta, storm_info.meta
+                        )
                     else:
-                        url_to_info[storm_info.url] = storm_info
+                        url_to_info[storm_info.url] = copy.deepcopy(storm_info)
         for url in url_to_info:
             url_to_info[url].snippets = list(set(url_to_info[url].snippets))
         return url_to_info
@@ -197,6 +201,9 @@ class StormArticle(Article):
                 self.reference["url_to_info"][url] = storm_info
             else:
                 existing_snippets = self.reference["url_to_info"][url].snippets
+                self.reference["url_to_info"][url].meta = merge_source_metadata(
+                    self.reference["url_to_info"][url].meta, storm_info.meta
+                )
                 existing_snippets.extend(storm_info.snippets)
                 self.reference["url_to_info"][url].snippets = list(
                     set(existing_snippets)
@@ -232,7 +239,7 @@ class StormArticle(Article):
                 )
                 insert_to_front = (
                     parent_node.section_name == self.root.section_name
-                    and current_section_node.section_name == "summary"
+                    and current_section_node.section_name in {"summary", "摘要"}
                 )
                 parent_node.add_child(
                     current_section_node, insert_to_front=insert_to_front
@@ -265,19 +272,10 @@ class StormArticle(Article):
         """
 
         if current_section_info_list is not None:
-            references = set(
-                [int(x) for x in re.findall(r"\[(\d+)\]", current_section_content)]
+            current_section_content = ArticleTextProcessing.remove_invalid_citations(
+                current_section_content, range(1, len(current_section_info_list) + 1)
             )
-            # for any reference number greater than max number of references, delete the reference
-            if len(references) > 0:
-                max_ref_num = max(references)
-                if max_ref_num > len(current_section_info_list):
-                    for i in range(len(current_section_info_list), max_ref_num + 1):
-                        current_section_content = current_section_content.replace(
-                            f"[{i}]", ""
-                        )
-                        if i in references:
-                            references.remove(i)
+            references = set(ArticleTextProcessing.parse_citation_indices(current_section_content))
             # for any reference that is not used, trim it from current_section_info_list
             index_to_keep = [i - 1 for i in references]
             citation_mapping = self._merge_new_info_to_references(

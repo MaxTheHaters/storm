@@ -160,7 +160,8 @@ class ConvToSection(dspy.Module):
 
 
 class WriteSection(dspy.Signature):
-    """Write a Wikipedia section based on the collected information.
+    """For a Chinese topic, write in Traditional Chinese (zh-TW); otherwise use the topic language. Preserve English proper names and paper titles where appropriate. Use only supplied sources and their exact citation indices; never invent facts, citations, papers, or URLs.
+    Write a Wikipedia section based on the collected information.
 
     Here is the format of your writing:
         1. Use "#" Title" to indicate section title, "##" Title" to indicate subsection title, "###" Title" to indicate subsubsection title, and so on.

@@ -3,7 +3,8 @@
 import re
 
 import streamlit as st
-import unidecode
+import html
+from i18n import translate
 
 DISABLE_LINK_CSS = """
 <style>
@@ -37,7 +38,7 @@ class stoc:
         st.write(DISABLE_LINK_CSS, unsafe_allow_html=True)
         # st.sidebar.caption("Table of contents")
         if expander is None:
-            expander = st.sidebar.expander("**Table of contents**", expanded=True)
+            expander = st.sidebar.expander(f"**{translate('toc', st.session_state.get('language', 'zh-TW'))}**", expanded=True)
         with expander:
             with st.container(height=600, border=False):
                 markdown_toc = ""
@@ -46,7 +47,7 @@ class stoc:
                     markdown_toc += (
                         " " * 2 * h
                         + "- "
-                        + f'<a href="#{normalize(title)}" class="toc"> {title}</a> \n'
+                        + f'<a href="#{normalize(title)}" class="toc"> {html.escape(title)}</a> \n'
                     )
                 # st.sidebar.write(markdown_toc, unsafe_allow_html=True)
                 st.write(markdown_toc, unsafe_allow_html=True)
@@ -76,7 +77,7 @@ class stoc:
                 heading_text = line.lstrip("#").strip()
                 # Create slug (lowercase, spaces to hyphens, remove non-alphanumeric characters)
                 slug = (
-                    re.sub(r"[^a-zA-Z0-9\s-]", "", heading_text)
+                    re.sub(r"[^\w\s-]", "", heading_text)
                     .lower()
                     .replace(" ", "-")
                 )
@@ -122,18 +123,5 @@ def normalize(s):
     "it-s-a-test-to-spot-how-things-happ3n-h-h"
     """
 
-    # Replace accents with "-"
-    s_wo_accents = unidecode.unidecode(s)
-    accents = [s for s in s if s not in s_wo_accents]
-    for accent in accents:
-        s = s.replace(accent, "-")
-
-    # Lowercase
-    s = s.lower()
-
-    # Keep only alphanum and remove "-" suffix if existing
-    normalized = (
-        "".join([char if char.isalnum() else "-" for char in s]).strip("-").lower()
-    )
-
-    return normalized
+    # Match Streamlit's Unicode-aware heading anchors.
+    return re.sub(r"[^\w\- ]", "", s.strip().lower()).replace(" ", "-")
