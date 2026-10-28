@@ -8,7 +8,7 @@
 
 請先安裝 [Codex CLI](https://learn.chatgpt.com/docs/cli)，執行 `codex login`，選擇 ChatGPT 登入；用 `codex login status` 確認。需要支援 JSONL `web_search.results` 的版本；實際搜尋事件格式已於 **0.165.0-alpha.1.2** 驗證。較舊版本若未輸出結構化結果，介面會明確顯示錯誤，無法以模型文字中的網址代替。
 
-環境需求：Python 3.10 或 3.11。核心依賴指定 `dspy_ai==2.4.9`，minimal UI 指定 `streamlit==1.31.1`。其他部分依賴未固定版本，完整套件相容性仍需於實際環境驗證。首次文章內文檢索會下載本機句向量模型，需要網路與磁碟空間；它不會呼叫付費的 embeddings API。
+環境需求：Python 3.10 以上；本次已使用 Windows Python 3.11 與 macOS Python 3.12 驗證。核心依賴指定 `dspy_ai==2.4.9`，minimal UI 指定 `streamlit==1.31.1`。Mac 安裝器使用 `tools/macos/constraints.txt` 限制主要相依套件版本，其餘依賴尚未完整鎖版。首次文章內文檢索會下載本機句向量模型，需要網路與磁碟空間；它不會呼叫付費的 embeddings API。
 
 ### Windows PowerShell
 
@@ -38,6 +38,16 @@ python -m streamlit run frontend/demo_light/storm.py
 若啟動虛擬環境受 PowerShell 政策阻擋，可直接以 `.\.venv\Scripts\python.exe` 執行 Python 指令。若找不到 `codex`，可將 `$env:STORM_CODEX_COMMAND` 設為 Codex 執行檔的完整路徑。終端機工作階段中的環境變數設定只影響目前工作階段。
 
 ### macOS（zsh）
+
+若要使用 Dock 圖示，可在 Mac 的專案根目錄執行一次（需 Python 3.10 以上及 Xcode Command Line Tools）：
+
+```bash
+python3.12 tools/install_macos_launcher.py --add-to-dock
+```
+
+安裝程式會準備專用 `.venv`，編譯原生 **STORM.app** 到 `~/Applications/`，並加入 Dock。之後點圖示便會在背景啟動只綁定 `127.0.0.1` 的服務，再用預設瀏覽器開啟研究介面。再次點圖示會開啟同一個服務；關閉瀏覽器不會停止服務，請在 Dock 的 STORM 圖示按右鍵並選「結束」。STORM 是目前作用中的 App 時，也可按 `⌘Q` 結束。
+
+啟動器需要保留原位置的專案與 `.venv`；移動專案後須重新安裝。啟動紀錄位於 `local/macos-launcher/`。安裝程式不覆寫已存在的 `STORM.app`，重新安裝前請先在 Finder 移走舊版本。Python 執行檔名稱依實際安裝版本調整；本次 SSH Mac 使用 Homebrew Python 3.12。
 
 ```bash
 python3 -m venv .venv
@@ -91,7 +101,7 @@ storm_gen_article_polished.txt
 python -m unittest discover -s tests -v
 ```
 
-包含主題、i18n、提示詞、引用格式、Codex 事件解析、錯誤處理與來源保存。真實 DSPy 契約測試會在未安裝 DSPy 時標記 skip。
+包含主題、i18n、提示詞、引用格式、Codex 事件解析、錯誤處理、來源保存與啟動器。真實 DSPy 契約測試會在未安裝 DSPy 時標記 skip；Mac 啟動器的程序群組測試在 Windows 上會跳過，已在實際 Mac 執行。
 
 本次 DSPy 契約測試在隔離虛擬環境使用 `dspy_ai==2.4.9` 與 `pyarrow==20.0.0` 驗證，包含 `Predict` 和 `ChainOfThought` 的繁中及引用解析。這不等於所有未固定版本的依賴組合皆已通過。
 
