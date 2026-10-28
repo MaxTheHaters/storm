@@ -24,6 +24,39 @@ FIXTURE = (ROOT / "tests/fixtures/codex-search.jsonl").read_text(encoding="utf-8
 
 
 class CodexBackendTests(unittest.TestCase):
+    def test_environment_timeout_reaches_the_codex_process(self):
+        m = backend()
+        completed = subprocess.CompletedProcess([], 0, stdout=FIXTURE, stderr="")
+        with patch.dict(os.environ, {"STORM_CODEX_TIMEOUT": "600"}), patch.object(m.subprocess, "run", return_value=completed) as run:
+            m.CodexClient(command="codex").complete("研究")
+        self.assertEqual(run.call_args.kwargs["timeout"], 600)
+
+    def test_invalid_timeout_settings_fail_before_starting_codex(self):
+        m = backend()
+        for value in ["invalid", "0", "-1", "nan", "3601"]:
+            with self.subTest(value=value), patch.dict(os.environ, {"STORM_CODEX_TIMEOUT": value}), self.assertRaises(m.CodexBackendError) as error:
+                m.CodexClient(command="codex")
+            self.assertEqual(error.exception.code, "codex_timeout_config")
+
+    def test_timeout_saves_retry_diagnostics_without_prompt_or_secrets(self):
+        m = backend()
+        partial = b'{"type":"thread.started","thread_id":"test-thread"}\n'
+        failure = subprocess.TimeoutExpired("codex", 180, output=partial,
+            stderr=b'WARN stream disconnected - retrying (2/5 in 44s) status: 429 Too Many Requests Bearer secret-token')
+        with tempfile.TemporaryDirectory() as folder:
+            client = m.CodexClient(command="codex", diagnostics_dir=folder)
+            with patch.object(m.subprocess, "run", side_effect=failure), self.assertRaises(m.CodexBackendError) as error:
+                client.complete("private research topic")
+            self.assertEqual(error.exception.code, "codex_timeout")
+            path = Path(error.exception.diagnostic_file)
+            record = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(record["status"], "timeout")
+            self.assertTrue(record["retry_detected"])
+            self.assertIn(429, record["http_statuses"])
+            self.assertEqual(record["thread_id"], "test-thread")
+            self.assertNotIn("secret-token", path.read_text(encoding="utf-8"))
+            self.assertNotIn("private research topic", path.read_text(encoding="utf-8"))
+
     def test_parses_real_tool_results_instead_of_final_message_links(self):
         m = backend()
         result = m.parse_codex_events(FIXTURE)

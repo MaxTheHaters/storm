@@ -13,7 +13,7 @@ from streamlit_option_menu import option_menu
 
 def main():
     global database
-    st.set_page_config(layout="wide")
+    st.set_page_config(page_title="STORM", page_icon="⛈️", layout="wide")
 
     if "first_run" not in st.session_state:
         st.session_state["first_run"] = True

@@ -69,8 +69,8 @@ def handle_initiated():
         if not os.path.exists(current_working_dir):
             os.makedirs(current_working_dir)
 
-        if "runner" not in st.session_state:
-            demo_util.set_storm_runner()
+        # New attempts must not reuse an old client timeout or failed LM history.
+        demo_util.set_storm_runner()
         st.session_state["page3_current_working_dir"] = current_working_dir
         st.session_state["page3_write_article_state"] = "pre_writing"
 
@@ -170,6 +170,8 @@ def create_new_article_page():
         handle_completed()
     except CodexBackendError as exc:
         st.error(t(exc.code))
+        if exc.diagnostic_file:
+            st.caption(t("codex_diagnostic", path=exc.diagnostic_file))
         st.session_state["page3_write_article_state"] = "not started"
     except ValueError as exc:
         if str(exc) == t("config_error"):

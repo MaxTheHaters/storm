@@ -12,6 +12,16 @@
 
 ### Windows PowerShell
 
+若要使用桌面／工作列按鈕，可在專案根目錄執行一次：
+
+```powershell
+.\tools\install_windows_launcher.ps1
+```
+
+安裝程式會準備專案的 `.venv`、打包本機啟動器，並在桌面及開始功能表建立 **STORM** 捷徑。之後雙擊捷徑即可啟動；可將捷徑釘選到工作列，或加入 Windows Dock。若使用 Edge／Chrome，研究介面會以獨立視窗開啟。
+
+服務只開放 `127.0.0.1`，再次啟動會開啟同一個服務。啟動器會縮到工作列；要停止服務，開啟啟動器並按「結束 STORM」。關閉研究視窗本身不會停止服務。啟動器位於 `local/launcher/STORM/STORM.exe`，需要保留專案與 `.venv`；不是可單獨搬移的完整安裝包。啟動失敗可查看 `local/launcher/streamlit.log`。
+
 從專案根目錄執行：
 
 ```powershell
@@ -40,7 +50,7 @@ export STORM_PROVIDER="codex"
 python -m streamlit run frontend/demo_light/storm.py
 ```
 
-`STORM_MODEL` 可選填 Codex 可用的模型 ID；未設定時採 CLI 的內建預設。每次呼叫在獨立暫存目錄執行，不載入使用者 `config.toml`，保留登入授權並停用 shell、apps、hooks 與分工。呼叫會序列執行，每次逾時上限 180 秒。CLI 仍需要在使用者目錄寫入正常的執行狀態。本版本用於自己電腦上的本機操作。
+`STORM_MODEL` 可選填 Codex 可用的模型 ID；未設定時採 CLI 的內建預設。每次呼叫在獨立暫存目錄執行，不載入使用者 `config.toml`，保留登入授權並停用 shell、apps、hooks 與分工。呼叫會序列執行，每次預設等待上限 600 秒；可用 STORM_CODEX_TIMEOUT 設定正數秒數，最多 3600 秒。這是等待上限，不代表每次都需要等這麼久。CLI 仍需要在使用者目錄寫入正常的執行狀態。本版本用於自己電腦上的本機操作。
 
 ## 研究來源與引用保存
 
@@ -50,6 +60,7 @@ python -m streamlit run frontend/demo_light/storm.py
 
 ```text
 codex_search/<識別碼>.json   # 工具搜尋結果、實際查詢、時間、thread ID 與用量
+codex_diagnostics/<識別碼>.json  # 呼叫階段、用時、是否重試與 HTTP 狀態；不存金鑰、提示詞或原始 stderr
 conversation_log.json       # 對話與每一回合取得的來源
 raw_search_results.json     # 原始來源對照
 url_to_info.json            # 文章引用索引與來源 metadata

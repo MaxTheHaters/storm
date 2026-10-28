@@ -600,15 +600,15 @@ def set_storm_runner():
         raise ValueError(t("config_error"))
     client = CodexClient(model=model or None) if use_codex else None
     llm_configs = STORMWikiLMConfigs()
-    for setter, max_tokens in [
-        (llm_configs.set_conv_simulator_lm, 1000),
-        (llm_configs.set_question_asker_lm, 1000),
-        (llm_configs.set_outline_gen_lm, 1500),
-        (llm_configs.set_article_gen_lm, 2000),
-        (llm_configs.set_article_polish_lm, 4000),
+    for setter, max_tokens, stage in [
+        (llm_configs.set_conv_simulator_lm, 1000, "research_answer"),
+        (llm_configs.set_question_asker_lm, 1000, "questions"),
+        (llm_configs.set_outline_gen_lm, 1500, "outline"),
+        (llm_configs.set_article_gen_lm, 2000, "article"),
+        (llm_configs.set_article_polish_lm, 4000, "polish"),
     ]:
         if use_codex:
-            setter(CodexLM(client))
+            setter(CodexLM(client, stage=stage))
         else:
             model_name = model if model.startswith(provider + "/") else f"{provider}/{model}"
             setter(LitellmModel(model=model_name, max_tokens=max_tokens, temperature=0.7))
