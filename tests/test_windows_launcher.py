@@ -73,7 +73,7 @@ class LauncherTests(unittest.TestCase):
                 session.start()
                 session.stop()
             self.assertEqual(popen.call_args.kwargs["env"]["STORM_PROVIDER"], "codex")
-            self.assertEqual(Path(popen.call_args.args[0][0]), root / ".venv/Scripts/python.exe")
+            self.assertEqual(Path(popen.call_args.args[0][0]), root.resolve() / ".venv/Scripts/python.exe")
 
 
 if __name__ == "__main__":
