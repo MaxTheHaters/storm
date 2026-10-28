@@ -1,4 +1,5 @@
 import copy
+import re
 from typing import Union
 
 import dspy
@@ -42,19 +43,25 @@ class StormArticlePolishingModule(ArticlePolishingModule):
         polish_result = self.polish_page(
             topic=topic, draft_page=article_text, polish_whole_page=remove_duplicate
         )
-        lead_section = f"# summary\n{polish_result.lead_section}"
-        polished_article = "\n\n".join([lead_section, polish_result.page])
+        valid_indices = set(ArticleTextProcessing.parse_citation_indices(article_text))
+        lead = ArticleTextProcessing.remove_invalid_citations(polish_result.lead_section, valid_indices)
+        heading = "摘要" if re.search(r"[\u3400-\u9fff]", topic) else "summary"
+        lead_section = f"# {heading}\n{lead}"
+        page = ArticleTextProcessing.remove_invalid_citations(polish_result.page, valid_indices)
+        polished_article = "\n\n".join([lead_section, page])
         polished_article_dict = ArticleTextProcessing.parse_article_into_dict(
             polished_article
         )
         polished_article = copy.deepcopy(draft_article)
         polished_article.insert_or_create_section(article_dict=polished_article_dict)
-        polished_article.post_processing()
+        # Keep the draft's unified citation indices and source mapping stable.
+        polished_article.prune_empty_nodes()
         return polished_article
 
 
 class WriteLeadSection(dspy.Signature):
-    """Write a lead section for the given Wikipedia page with the following guidelines:
+    """For a Chinese topic, write in Traditional Chinese (zh-TW); otherwise use the topic language. Use only facts and citations from the draft; never invent citations, sources, paper titles or URLs, and never change citation indices.
+    Write a lead section for the given Wikipedia page with the following guidelines:
     1. The lead should stand on its own as a concise overview of the article's topic. It should identify the topic, establish context, explain why the topic is notable, and summarize the most important points, including any prominent controversies.
     2. The lead section should be concise and contain no more than four well-composed paragraphs.
     3. The lead section should be carefully sourced as appropriate. Add inline citations (e.g., "Washington, D.C., is the capital of the United States.[1][3].") where necessary.
@@ -66,7 +73,8 @@ class WriteLeadSection(dspy.Signature):
 
 
 class PolishPage(dspy.Signature):
-    """You are a faithful text editor that is good at finding repeated information in the article and deleting them to make sure there is no repetition in the article. You won't delete any non-repeated part in the article. You will keep the inline citations and article structure (indicated by "#", "##", etc.) appropriately. Do your job for the following article."""
+    """Preserve the language of the draft, including Traditional Chinese (zh-TW), English proper names and paper titles. Never invent facts, citations, sources or URLs, and never change citation indices.
+    You are a faithful text editor that is good at finding repeated information in the article and deleting them to make sure there is no repetition in the article. You won't delete any non-repeated part in the article. You will keep the inline citations and article structure (indicated by "#", "##", etc.) appropriately. Do your job for the following article."""
 
     draft_page = dspy.InputField(prefix="The draft article:\n", format=str)
     page = dspy.OutputField(prefix="Your revised article:\n", format=str)

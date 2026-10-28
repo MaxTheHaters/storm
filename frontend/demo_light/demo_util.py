@@ -18,11 +18,16 @@ from knowledge_storm import (
     STORMWikiRunner,
     STORMWikiLMConfigs,
 )
-from knowledge_storm.lm import OpenAIModel
+from knowledge_storm.lm import LitellmModel
+from i18n import translate
 from knowledge_storm.rm import YouRM
 from knowledge_storm.storm_wiki.modules.callback import BaseCallbackHandler
 from knowledge_storm.utils import truncate_filename
 from stoc import stoc
+
+
+def t(key, **kwargs):
+    return translate(key, st.session_state.get("language", "zh-TW"), **kwargs)
 
 
 class DemoFileIOHelper:
@@ -63,7 +68,7 @@ class DemoFileIOHelper:
         Returns:
             str: The content of the file as a single string.
         """
-        with open(file_path) as f:
+        with open(file_path, encoding="utf-8") as f:
             return f.read()
 
     @staticmethod
@@ -79,7 +84,7 @@ class DemoFileIOHelper:
             dict or list: The content of the JSON file. The type depends on the
                         structure of the JSON file (object or array at the root).
         """
-        with open(file_path) as f:
+        with open(file_path, encoding="utf-8") as f:
             return json.load(f)
 
     @staticmethod
@@ -475,7 +480,7 @@ def _display_main_article_text(article_text, citation_dict, table_content_sideba
             article_text.find("Write the lead section:")
             + len("Write the lead section:") :
         ]
-    if article_text[0] == "#":
+    if article_text.startswith("#"):
         article_text = "\n".join(article_text.split("\n")[1:])
     article_text = DemoTextProcessingHelper.add_inline_citation_link(
         article_text, citation_dict
@@ -487,16 +492,15 @@ def _display_main_article_text(article_text, citation_dict, table_content_sideba
 
 def _display_references(citation_dict):
     if citation_dict:
-        reference_list = [f"reference [{i}]" for i in range(1, len(citation_dict) + 1)]
-        selected_key = st.selectbox("Select a reference", reference_list)
-        citation_val = citation_dict[reference_list.index(selected_key) + 1]
-        citation_val["title"] = citation_val["title"].replace("$", "\\$")
-        st.markdown(f"**Title:** {citation_val['title']}")
-        st.markdown(f"**Url:** {citation_val['url']}")
-        snippets = "\n\n".join(citation_val["snippets"]).replace("$", "\\$")
-        st.markdown(f"**Highlights:**\n\n {snippets}")
+        index = st.selectbox(t("select_reference"), sorted(citation_dict),
+                             format_func=lambda i: t("reference", index=i))
+        citation = citation_dict[index]
+        st.markdown(f"**{t('title')}:** {citation['title'].replace('$', chr(92) + '$')}")
+        st.markdown(f"**{t('url')}:** {citation['url']}")
+        snippets = "\n\n".join(citation["snippets"]).replace("$", "\\$")
+        st.markdown(f"**{t('highlights')}:**\n\n{snippets}")
     else:
-        st.markdown("**No references available**")
+        st.markdown(f"**{t('no_references')}**")
 
 
 def _display_persona_conversations(conversation_log):
@@ -508,7 +512,9 @@ def _display_persona_conversations(conversation_log):
         conversation_log
     )
     # construct tabs for each persona conversation
-    persona_tabs = st.tabs([name for (name, _, _) in parsed_conversation_history])
+    if not parsed_conversation_history:
+        return
+    persona_tabs = st.tabs([name or t("perspective", index=i + 1) for i, (name, _, _) in enumerate(parsed_conversation_history)])
     for idx, persona_tab in enumerate(persona_tabs):
         with persona_tab:
             # show persona description
@@ -532,7 +538,7 @@ def _display_main_article(
 
     with st.container(height=1000, border=True):
         table_content_sidebar = st.sidebar.expander(
-            "**Table of contents**", expanded=True
+            f"**{t('toc')}**", expanded=True
         )
         _display_main_article_text(
             article_text=article_data.get("article", ""),
@@ -542,16 +548,13 @@ def _display_main_article(
 
     # display reference panel
     if show_reference and "citations" in article_data:
-        with st.sidebar.expander("**References**", expanded=True):
+        with st.sidebar.expander(f"**{t('references')}**", expanded=True):
             with st.container(height=800, border=False):
                 _display_references(citation_dict=article_data.get("citations", {}))
 
     # display conversation history
     if show_conversation and "conversation_log" in article_data:
-        with st.expander(
-            "**STORM** is powered by a knowledge agent that proactively research a given topic by asking good questions coming from different perspectives.\n\n"
-            ":sunglasses: Click here to view the agent's brain**STORM**ing process!"
-        ):
+        with st.expander(t("conversation")):
             _display_persona_conversations(
                 conversation_log=article_data.get("conversation_log", {})
             )
@@ -579,21 +582,21 @@ def set_storm_runner():
     if not os.path.exists(current_working_dir):
         os.makedirs(current_working_dir)
 
-    # configure STORM runner
+    # LiteLLM reads provider credentials from environment; do not store keys in config logs.
+    provider = os.getenv("STORM_PROVIDER", "").strip()
+    model = os.getenv("STORM_MODEL", "").strip()
+    if not provider or not model or not os.getenv("YDC_API_KEY"):
+        raise ValueError(t("config_error"))
+    model_name = model if model.startswith(provider + "/") else f"{provider}/{model}"
     llm_configs = STORMWikiLMConfigs()
-    llm_configs.init_openai_model(
-        openai_api_key=st.secrets["OPENAI_API_KEY"], openai_type="openai"
-    )
-    llm_configs.set_question_asker_lm(
-        OpenAIModel(
-            model="gpt-4-1106-preview",
-            api_key=st.secrets["OPENAI_API_KEY"],
-            api_provider="openai",
-            max_tokens=500,
-            temperature=1.0,
-            top_p=0.9,
-        )
-    )
+    for setter, max_tokens in [
+        (llm_configs.set_conv_simulator_lm, 1000),
+        (llm_configs.set_question_asker_lm, 1000),
+        (llm_configs.set_outline_gen_lm, 1500),
+        (llm_configs.set_article_gen_lm, 2000),
+        (llm_configs.set_article_polish_lm, 4000),
+    ]:
+        setter(LitellmModel(model=model_name, max_tokens=max_tokens, temperature=0.7))
     engine_args = STORMWikiRunnerArguments(
         output_dir=current_working_dir,
         max_conv_turn=3,
@@ -602,7 +605,7 @@ def set_storm_runner():
         retrieve_top_k=5,
     )
 
-    rm = YouRM(ydc_api_key=st.secrets["YDC_API_KEY"], k=engine_args.search_top_k)
+    rm = YouRM(ydc_api_key=os.environ["YDC_API_KEY"], k=engine_args.search_top_k)
 
     runner = STORMWikiRunner(engine_args, llm_configs, rm)
     st.session_state["runner"] = runner
@@ -615,10 +618,7 @@ def display_article_page(
     show_main_article=True,
 ):
     if show_title:
-        st.markdown(
-            f"<h2 style='text-align: center;'>{selected_article_name.replace('_', ' ')}</h2>",
-            unsafe_allow_html=True,
-        )
+        st.header(selected_article_name.replace("_", " "))
 
     if show_main_article:
         _display_main_article(selected_article_file_path_dict)
@@ -630,48 +630,34 @@ class StreamlitCallbackHandler(BaseCallbackHandler):
 
     def on_identify_perspective_start(self, **kwargs):
         self.status_container.info(
-            "Start identifying different perspectives for researching the topic."
+            t("perspectives_start")
         )
 
     def on_identify_perspective_end(self, perspectives: list[str], **kwargs):
         perspective_list = "\n- ".join(perspectives)
         self.status_container.success(
-            f"Finish identifying perspectives. Will now start gathering information"
-            f" from the following perspectives:\n- {perspective_list}"
+            t("perspectives_done", perspectives=perspective_list)
         )
 
     def on_information_gathering_start(self, **kwargs):
-        self.status_container.info("Start browsing the Internet.")
+        self.status_container.info(t("browse_start"))
 
     def on_dialogue_turn_end(self, dlg_turn, **kwargs):
-        urls = list(set([r.url for r in dlg_turn.search_results]))
-        for url in urls:
-            self.status_container.markdown(
-                f"""
-                    <style>
-                    .small-font {{
-                        font-size: 14px;
-                        margin: 0px;
-                        padding: 0px;
-                    }}
-                    </style>
-                    <div class="small-font">Finish browsing <a href="{url}" class="small-font" target="_blank">{url}</a>.</div>
-                    """,
-                unsafe_allow_html=True,
-            )
+        for url in dict.fromkeys(r.url for r in dlg_turn.search_results):
+            self.status_container.write(t("browsed", url=url))
 
     def on_information_gathering_end(self, **kwargs):
-        self.status_container.success("Finish collecting information.")
+        self.status_container.success(t("gather_done"))
 
     def on_information_organization_start(self, **kwargs):
         self.status_container.info(
-            "Start organizing information into a hierarchical outline."
+            t("outline_start")
         )
 
     def on_direct_outline_generation_end(self, outline: str, **kwargs):
         self.status_container.success(
-            f"Finish leveraging the internal knowledge of the large language model."
+            t("direct_done")
         )
 
     def on_outline_refinement_end(self, outline: str, **kwargs):
-        self.status_container.success(f"Finish leveraging the collected information.")
+        self.status_container.success(t("outline_done"))

@@ -232,7 +232,7 @@ class StormArticle(Article):
                 )
                 insert_to_front = (
                     parent_node.section_name == self.root.section_name
-                    and current_section_node.section_name == "summary"
+                    and current_section_node.section_name in {"summary", "摘要"}
                 )
                 parent_node.add_child(
                     current_section_node, insert_to_front=insert_to_front
@@ -272,7 +272,7 @@ class StormArticle(Article):
             if len(references) > 0:
                 max_ref_num = max(references)
                 if max_ref_num > len(current_section_info_list):
-                    for i in range(len(current_section_info_list), max_ref_num + 1):
+                    for i in range(len(current_section_info_list) + 1, max_ref_num + 1):
                         current_section_content = current_section_content.replace(
                             f"[{i}]", ""
                         )

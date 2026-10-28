@@ -25,3 +25,6 @@ secrets.toml
 */assertion.log
 *results/
 .venv/
+# Demo output and credentials
+frontend/demo_light/DEMO_WORKING_DIR/
+.streamlit/secrets.toml

@@ -20,12 +20,10 @@ This is a minimal user interface for `STORMWikiRunner` which includes the follow
     ```bash
     pip install -r requirements.txt
     ```
-2. Make sure you set up the API keys following the instructions in the main README file. Create a copy of `secrets.toml` and place it under `.streamlit/`.
-3. Run the following command to start the user interface:
-    ```bash
-    streamlit run storm.py
-    ```
-   The user interface will create a `DEMO_WORKING_DIR` directory in the current directory to store the outputs.
+3. Set `STORM_PROVIDER`, `STORM_MODEL`, your provider's API key (for example `OPENAI_API_KEY`), and `YDC_API_KEY` in the environment. Do not commit API keys.
+4. From the repository root, run `python -m streamlit run frontend/demo_light/storm.py`.
+
+See [README.zh-TW.md](../../README.zh-TW.md) for Windows and macOS instructions, costs, and limitations. The interface defaults to Traditional Chinese and offers an English switch. Output is saved in `frontend/demo_light/DEMO_WORKING_DIR`.
 
 ## Customization
 

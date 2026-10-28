@@ -16,6 +16,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from trafilatura import extract
 
 from .lm import LitellmModel
+from .topic_validation import validate_topic
 
 logging.getLogger("httpx").setLevel(logging.WARNING)  # Disable INFO logging for httpx.
 
@@ -364,10 +365,15 @@ class ArticleTextProcessing:
         return [int(index[1:-1]) for index in matches]
 
     @staticmethod
+    def remove_invalid_citations(text, valid_indices):
+        """Remove unsupported markers without changing the remaining indices."""
+        return re.sub(r"\[(\d+)\]", lambda m: m.group(0) if int(m.group(1)) in valid_indices else "", text)
+
+    @staticmethod
     def remove_uncompleted_sentences_with_citations(text):
         """
         Removes uncompleted sentences and standalone citations from the input text. Sentences are identified
-        by their ending punctuation (.!?), optionally followed by a citation in square brackets (e.g., "[1]").
+        by their ending punctuation (.!?。！？), optionally followed by citations in square brackets (e.g., "[1]").
         Grouped citations (e.g., "[1, 2]") are split into individual ones (e.g., "[1] [2]"). Only text up to
         and including the last complete sentence and its citation is retained.
 
@@ -381,21 +387,10 @@ class ArticleTextProcessing:
 
         # Convert citations like [1, 2, 3] to [1][2][3].
         def replace_with_individual_brackets(match):
-            numbers = match.group(1).split(", ")
+            numbers = re.split(r",\s*", match.group(1))
             return " ".join(f"[{n}]" for n in numbers)
 
-        # Deduplicate and sort individual groups of citations.
-        def deduplicate_group(match):
-            citations = match.group(0)
-            unique_citations = list(set(re.findall(r"\[\d+\]", citations)))
-            sorted_citations = sorted(
-                unique_citations, key=lambda x: int(x.strip("[]"))
-            )
-            # Return the sorted unique citations as a string
-            return "".join(sorted_citations)
-
         text = re.sub(r"\[([0-9, ]+)\]", replace_with_individual_brackets, text)
-        text = re.sub(r"(\[\d+\])+", deduplicate_group, text)
 
         # Deprecated: Remove sentence without proper ending punctuation and citations.
         # Split the text into sentences (including citations).
@@ -416,7 +411,7 @@ class ArticleTextProcessing:
         #     combined_sentences += ' '.join(trailing_citations)
 
         # Regex pattern to match sentence endings, including optional citation markers.
-        eos_pattern = r"([.!?])\s*(\[\d+\])?\s*"
+        eos_pattern = r"([.!?。！？])\s*(?:\[\d+\]\s*)*"
         matches = list(re.finditer(eos_pattern, text))
         if matches:
             last_match = matches[-1]
@@ -443,7 +438,7 @@ class ArticleTextProcessing:
             except Exception as e:
                 max_ref_num = 0
             if max_ref_num > len(turn.search_results):
-                for i in range(len(turn.search_results), max_ref_num + 1):
+                for i in range(len(turn.search_results) + 1, max_ref_num + 1):
                     turn.agent_utterance = turn.agent_utterance.replace(f"[{i}]", "")
             turn.agent_utterance = (
                 ArticleTextProcessing.remove_uncompleted_sentences_with_citations(
@@ -611,13 +606,13 @@ class FileIOHelper:
 
     @staticmethod
     def write_str(s, path):
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             f.write(s)
 
     @staticmethod
     def load_str(path):
-        with open(path, "r") as f:
-            return "\n".join(f.readlines())
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
 
     @staticmethod
     def dump_pickle(obj, path):
@@ -712,39 +707,25 @@ class WebPageHelper:
 
 
 def user_input_appropriateness_check(user_input):
+    problem = validate_topic(user_input)
+    if problem:
+        return {"empty": "The topic cannot be empty.",
+                "too_long": "The input is too long. Please make your input topic more concise!",
+                "invalid": "The input contains invalid characters or an unsafe filename."}[problem]
+
     my_openai_model = LitellmModel(
-        model="azure/gpt-4o-mini",
-        max_tokens=10,
-        temperature=0.0,
-        top_p=0.9,
+        model=os.getenv("STORM_MODERATION_MODEL", os.getenv("STORM_MODEL", "azure/gpt-4o-mini")),
+        max_tokens=30, temperature=0.0, top_p=0.9,
     )
-
-    if len(user_input.split()) > 20:
-        return "The input is too long. Please make your input topic more concise!"
-
-    if not re.match(r'^[a-zA-Z0-9\s\-"\,\.?\']*$', user_input):
-        return "The input contains invalid characters. The input should only contain a-z, A-Z, 0-9, space, -/\"/,./?/'."
-
-    prompt = f"""Here is a topic input into a knowledge curation engine that can write a Wikipedia-like article for the topic. Please judge whether it is appropriate or not for the engine to curate information for this topic based on English search engine. The following types of inputs are inappropriate:
-1. Inputs that may be related to illegal, harmful, violent, racist, or sexual purposes.
-2. Inputs that are given using languages other than English. Currently, the engine can only support English.
-3. Inputs that are related to personal experience or personal information. Currently, the engine can only use information from the search engine.
-4. Inputs that are not aimed at topic research or inquiry. For example, asks requiring detailed execution, such as calculations, programming, or specific service searches fall outside the engine's scope of capabilities.
-If the topic is appropriate for the engine to process, output "Yes."; otherwise, output "No. The input violates reason [1/2/3/4]".
-User input: {user_input}"""
+    prompt = f"""Judge whether the following topic is appropriate for an online research engine.
+Chinese, English and mixed-language topics are allowed. Reject requests for illegal or harmful
+purposes (reason 1), personal information or personal experiences (reason 3), and instructions
+that are not a research topic (reason 4). Respond Yes or No. The input violates reason N.
+Topic: {user_input}"""
     reject_reason_info = {
-        1: "Sorry, this input may be related to sensitive topics. Please try another topic. "
-        "(Our input filtering uses OpenAI GPT-4o-mini, which may result in false positives. "
-        "We apologize for any inconvenience.)",
-        2: "Sorry, the current engine can only support English. Please try another topic. "
-        "(Our input filtering uses OpenAI GPT-4o-mini, which may result in false positives. "
-        "We apologize for any inconvenience.)",
-        3: "Sorry, the current engine cannot process topics related to personal experience. Please try another topic. "
-        "(Our input filtering uses OpenAI GPT-4o-mini, which may result in false positives. "
-        "We apologize for any inconvenience.)",
-        4: "Sorry, STORM cannot follow arbitrary instruction. Please input a topic you want to learn about. "
-        "(Our input filtering uses OpenAI GPT-4o-mini, which may result in false positives. "
-        "We apologize for any inconvenience.)",
+        1: "Sorry, this input may be related to sensitive topics. Please try another topic.",
+        3: "Sorry, the engine cannot process personal information or experiences.",
+        4: "Please input a topic you want to research.",
     }
 
     try:

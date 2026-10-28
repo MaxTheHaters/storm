@@ -16,6 +16,7 @@ from .modules.storm_dataclass import StormInformationTable, StormArticle
 from ..interface import Engine, LMConfigs, Retriever
 from ..lm import LitellmModel
 from ..utils import FileIOHelper, makeStringRed, truncate_filename
+from ..topic_validation import validate_topic
 
 
 class STORMWikiLMConfigs(LMConfigs):
@@ -300,7 +301,7 @@ class STORMWikiRunner(Engine):
 
         llm_call_history = self.lm_configs.collect_and_reset_lm_history()
         with open(
-            os.path.join(self.article_output_dir, "llm_call_history.jsonl"), "w"
+            os.path.join(self.article_output_dir, "llm_call_history.jsonl"), "w", encoding="utf-8"
         ) as f:
             for call in llm_call_history:
                 if "kwargs" in call:
@@ -375,6 +376,9 @@ class STORMWikiRunner(Engine):
             "No action is specified. Please set at least one of --do-research, --do-generate-outline, --do-generate-article, --do-polish-article"
         )
 
+        problem = validate_topic(topic)
+        if problem:
+            raise ValueError(f"Invalid topic: {problem}")
         self.topic = topic
         self.article_dir_name = truncate_filename(
             topic.replace(" ", "_").replace("/", "_")
