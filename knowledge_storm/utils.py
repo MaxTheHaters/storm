@@ -431,15 +431,9 @@ class ArticleTextProcessing:
                     : turn.agent_utterance.find("Sources:")
                 ]
             turn.agent_utterance = turn.agent_utterance.replace("Answer:", "").strip()
-            try:
-                max_ref_num = max(
-                    [int(x) for x in re.findall(r"\[(\d+)\]", turn.agent_utterance)]
-                )
-            except Exception as e:
-                max_ref_num = 0
-            if max_ref_num > len(turn.search_results):
-                for i in range(len(turn.search_results) + 1, max_ref_num + 1):
-                    turn.agent_utterance = turn.agent_utterance.replace(f"[{i}]", "")
+            turn.agent_utterance = ArticleTextProcessing.remove_invalid_citations(
+                turn.agent_utterance, range(1, len(turn.search_results or []) + 1)
+            )
             turn.agent_utterance = (
                 ArticleTextProcessing.remove_uncompleted_sentences_with_citations(
                     turn.agent_utterance

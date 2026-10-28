@@ -17,6 +17,7 @@ from ..interface import Engine, LMConfigs, Retriever
 from ..lm import LitellmModel
 from ..utils import FileIOHelper, makeStringRed, truncate_filename
 from ..topic_validation import validate_topic
+from ..codex_backend import CodexBackendError
 
 
 class STORMWikiLMConfigs(LMConfigs):
@@ -168,6 +169,11 @@ class STORMWikiRunnerArguments:
         },
     )
 
+    disable_related_topics: bool = field(
+        default=False,
+        metadata={"help": "Skip model-suggested Wikipedia URLs for persona inspiration."},
+    )
+
 
 class STORMWikiRunner(Engine):
     """STORM Wiki pipeline runner."""
@@ -181,7 +187,8 @@ class STORMWikiRunner(Engine):
 
         self.retriever = Retriever(rm=rm, max_thread=self.args.max_thread_num)
         storm_persona_generator = StormPersonaGenerator(
-            self.lm_configs.question_asker_lm
+            self.lm_configs.question_asker_lm,
+            use_related_topics=not self.args.disable_related_topics,
         )
         self.storm_knowledge_curation_module = StormKnowledgeCurationModule(
             retriever=self.retriever,
@@ -233,6 +240,8 @@ class STORMWikiRunner(Engine):
         information_table.dump_url_to_info(
             os.path.join(self.article_output_dir, "raw_search_results.json")
         )
+        if getattr(self.retriever.rm, "requires_source_evidence", False) and not information_table.url_to_info:
+            raise CodexBackendError("codex_no_sources")
         return information_table
 
     def run_outline_generation_module(
@@ -387,6 +396,8 @@ class STORMWikiRunner(Engine):
             self.args.output_dir, self.article_dir_name
         )
         os.makedirs(self.article_output_dir, exist_ok=True)
+        if hasattr(self.retriever.rm, "set_output_dir"):
+            self.retriever.rm.set_output_dir(self.article_output_dir)
 
         # research module
         information_table: StormInformationTable = None

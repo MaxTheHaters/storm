@@ -19,6 +19,7 @@ from knowledge_storm import (
     STORMWikiLMConfigs,
 )
 from knowledge_storm.lm import LitellmModel
+from knowledge_storm.codex_backend import CodexClient, CodexLM, CodexRM
 from i18n import translate
 from knowledge_storm.rm import YouRM
 from knowledge_storm.storm_wiki.modules.callback import BaseCallbackHandler
@@ -469,6 +470,7 @@ def _construct_citation_dict_from_search_result(search_results):
             "url": url,
             "title": search_results["url_to_info"][url]["title"],
             "snippets": search_results["url_to_info"][url]["snippets"],
+            "meta": search_results["url_to_info"][url].get("meta", {}),
         }
     return citation_dict
 
@@ -499,6 +501,15 @@ def _display_references(citation_dict):
         st.markdown(f"**{t('url')}:** {citation['url']}")
         snippets = "\n\n".join(citation["snippets"]).replace("$", "\\$")
         st.markdown(f"**{t('highlights')}:**\n\n{snippets}")
+        provenance = citation.get("meta", {}).get("provenance", [])
+        if provenance:
+            st.caption(t("search_excerpt"))
+            for record in provenance:
+                st.caption(t("source_provenance", query=record["query"],
+                             time=record["retrieved_at"], evidence=record["evidence_file"]))
+            st.download_button(t("download_source"),
+                               json.dumps(citation, ensure_ascii=False, indent=2),
+                               file_name=f"source-{index}.json", mime="application/json")
     else:
         st.markdown(f"**{t('no_references')}**")
 
@@ -582,12 +593,12 @@ def set_storm_runner():
     if not os.path.exists(current_working_dir):
         os.makedirs(current_working_dir)
 
-    # LiteLLM reads provider credentials from environment; do not store keys in config logs.
-    provider = os.getenv("STORM_PROVIDER", "").strip()
+    provider = os.getenv("STORM_PROVIDER", "codex").strip()
     model = os.getenv("STORM_MODEL", "").strip()
-    if not provider or not model or not os.getenv("YDC_API_KEY"):
+    use_codex = provider == "codex"
+    if not use_codex and (not provider or not model or not os.getenv("YDC_API_KEY")):
         raise ValueError(t("config_error"))
-    model_name = model if model.startswith(provider + "/") else f"{provider}/{model}"
+    client = CodexClient(model=model or None) if use_codex else None
     llm_configs = STORMWikiLMConfigs()
     for setter, max_tokens in [
         (llm_configs.set_conv_simulator_lm, 1000),
@@ -596,16 +607,24 @@ def set_storm_runner():
         (llm_configs.set_article_gen_lm, 2000),
         (llm_configs.set_article_polish_lm, 4000),
     ]:
-        setter(LitellmModel(model=model_name, max_tokens=max_tokens, temperature=0.7))
+        if use_codex:
+            setter(CodexLM(client))
+        else:
+            model_name = model if model.startswith(provider + "/") else f"{provider}/{model}"
+            setter(LitellmModel(model=model_name, max_tokens=max_tokens, temperature=0.7))
     engine_args = STORMWikiRunnerArguments(
         output_dir=current_working_dir,
-        max_conv_turn=3,
-        max_perspective=3,
+        max_conv_turn=1 if use_codex else 3,
+        max_perspective=1 if use_codex else 3,
+        max_search_queries_per_turn=1 if use_codex else 3,
         search_top_k=3,
         retrieve_top_k=5,
+        max_thread_num=1 if use_codex else 10,
+        disable_related_topics=use_codex,
     )
 
-    rm = YouRM(ydc_api_key=os.environ["YDC_API_KEY"], k=engine_args.search_top_k)
+    rm = (CodexRM(client, current_working_dir, k=engine_args.search_top_k) if use_codex
+          else YouRM(ydc_api_key=os.environ["YDC_API_KEY"], k=engine_args.search_top_k))
 
     runner = STORMWikiRunner(engine_args, llm_configs, rm)
     st.session_state["runner"] = runner

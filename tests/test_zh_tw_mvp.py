@@ -88,6 +88,34 @@ class PromptTests(unittest.TestCase):
 
 
 class DemoTests(unittest.TestCase):
+    def test_demo_defaults_to_codex_without_external_api_keys(self):
+        from test_codex_backend import backend
+        m = backend()
+        path = ROOT / "frontend/demo_light/demo_util.py"
+        node = next(n for n in ast.parse(path.read_text(encoding="utf-8")).body
+                    if isinstance(n, ast.FunctionDef) and n.name == "set_storm_runner")
+        models = []
+        class Config:
+            def __getattr__(self, name):
+                return models.append
+        class Args:
+            def __init__(self, **kwargs):
+                self.__dict__.update(kwargs)
+        st = type("Streamlit", (), {"session_state": {}})()
+        with __import__("tempfile").TemporaryDirectory() as folder:
+            namespace = {"os": os, "get_demo_dir": lambda: folder,
+                         "STORMWikiLMConfigs": Config, "STORMWikiRunnerArguments": Args,
+                         "STORMWikiRunner": lambda *args: args, "st": st,
+                         "CodexClient": m.CodexClient, "CodexLM": m.CodexLM, "CodexRM": m.CodexRM}
+            exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), namespace)
+            with patch.dict(os.environ, {}, clear=True):
+                namespace["set_storm_runner"]()
+        args, _, rm = st.session_state["runner"]
+        self.assertIsInstance(rm, m.CodexRM)
+        self.assertTrue(all(isinstance(model, m.CodexLM) for model in models))
+        self.assertEqual(args.max_thread_num, 1)
+        self.assertTrue(args.disable_related_topics)
+
     def test_reference_panel_uses_original_indices(self):
         path = ROOT / "frontend" / "demo_light" / "demo_util.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -147,10 +175,11 @@ class DemoTests(unittest.TestCase):
             def insert_or_create_section(self, article_dict, **kwargs):
                 self.result = article_dict
         article = Article()
-        namespace["update_section"](article, "# 章節\n事實[2]，錯誤[3]。", [object(), object()])
+        namespace["update_section"](article, "# 章節\n事實[2]，錯誤[3][0]。", [object(), object()])
         self.assertEqual(article.keep, [1])
         self.assertIn("[2]", str(article.result))
         self.assertNotIn("[3]", str(article.result))
+        self.assertNotIn("[0]", str(article.result))
 
 
 if __name__ == "__main__":

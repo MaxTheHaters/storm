@@ -4,6 +4,8 @@
 
 # STORM: Synthesis of Topic Outlines through Retrieval and Multi-perspective Question Asking
 
+[繁體中文本機使用說明](README.zh-TW.md): the minimal Streamlit UI defaults to Traditional Chinese and uses a ChatGPT-authenticated local Codex CLI for generation and web search. Search evidence is saved with article references; no Platform or You.com API key is required in Codex mode.
+
 <p align="center">
 | <a href="http://storm.genie.stanford.edu"><b>Research preview</b></a> | <a href="https://arxiv.org/abs/2402.14207"><b>STORM Paper</b></a>| <a href="https://www.arxiv.org/abs/2408.15232"><b>Co-STORM Paper</b></a>  | <a href="https://storm-project.stanford.edu/"><b>Website</b></a> |
 </p>

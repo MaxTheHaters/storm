@@ -5,6 +5,7 @@ import demo_util
 import streamlit as st
 from i18n import translate
 from knowledge_storm.topic_validation import validate_topic
+from knowledge_storm.codex_backend import CodexBackendError
 from demo_util import (
     DemoFileIOHelper,
     DemoTextProcessingHelper,
@@ -167,6 +168,9 @@ def create_new_article_page():
         handle_final_writing()
         handle_prepare_to_show_result()
         handle_completed()
+    except CodexBackendError as exc:
+        st.error(t(exc.code))
+        st.session_state["page3_write_article_state"] = "not started"
     except ValueError as exc:
         if str(exc) == t("config_error"):
             st.error(t("config_error"))

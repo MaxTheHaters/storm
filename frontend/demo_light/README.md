@@ -20,7 +20,7 @@ This is a minimal user interface for `STORMWikiRunner` which includes the follow
     ```bash
     pip install -r requirements.txt
     ```
-3. Set `STORM_PROVIDER`, `STORM_MODEL`, your provider's API key (for example `OPENAI_API_KEY`), and `YDC_API_KEY` in the environment. Do not commit API keys.
+3. Install Codex CLI and run `codex login` with ChatGPT sign-in. The default `STORM_PROVIDER=codex` uses Codex for generation and web search; no Platform or You.com API key is needed. `STORM_MODEL` is optional. Explicit non-Codex providers still require a model, provider credentials, and `YDC_API_KEY`. Never commit credentials.
 4. From the repository root, run `python -m streamlit run frontend/demo_light/storm.py`.
 
 See [README.zh-TW.md](../../README.zh-TW.md) for Windows and macOS instructions, costs, and limitations. The interface defaults to Traditional Chinese and offers an English switch. Output is saved in `frontend/demo_light/DEMO_WORKING_DIR`.

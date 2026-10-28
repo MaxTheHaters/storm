@@ -11,6 +11,7 @@ from .persona_generator import StormPersonaGenerator
 from .storm_dataclass import DialogueTurn, StormInformationTable
 from ...interface import KnowledgeCurationModule, Retriever, Information
 from ...utils import ArticleTextProcessing
+from ...codex_backend import CodexBackendError
 
 try:
     from streamlit.runtime.scriptrunner import add_script_run_ctx
@@ -236,6 +237,8 @@ class TopicExpert(dspy.Module):
                     answer = ArticleTextProcessing.remove_uncompleted_sentences_with_citations(
                         answer
                     )
+                except CodexBackendError:
+                    raise
                 except Exception as e:
                     logging.error(f"Error occurs when generating answer: {e}")
                     answer = "Sorry, I cannot answer this question. Please ask another question."

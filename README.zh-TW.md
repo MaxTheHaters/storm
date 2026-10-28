@@ -1,31 +1,31 @@
 # STORM 繁體中文 MVP
 
-本版本提供官方 minimal Streamlit 介面與 STORM 研究引擎的繁體中文支援。介面預設繁體中文，可在側欄切換 English；含中文字的研究主題會要求模型以繁體中文產生問題、大綱及報告。英文專有名詞與論文標題可保留原文。Co-STORM 的完整互動介面不在本版本範圍內。
+官方 minimal Streamlit 介面預設繁體中文，可在側欄切換 English。中文主題會要求模型以繁體中文產生專家提問、大綱及報告，並保留英文專有名詞、論文原名與引用對應。Co-STORM 的完整互動介面不在本版本範圍內。
 
-## 事前準備
+## 預設：模型與搜尋都使用 Codex
 
-- Python 3.10 或 3.11。核心套件指定 `dspy_ai==2.4.9`；minimal UI 指定 `streamlit==1.31.1`，其餘部分依賴未固定版本，安裝結果可能隨時間改變。
-- 一個 LiteLLM 支援的模型供應商帳號、模型名稱與對應 API Key。本範例使用 OpenAI；請自行選擇帳號可用的模型。
-- [You.com Search API](https://you.com/) 的 `YDC_API_KEY`。搜尋和模型呼叫皆可能計費。
-- 首次研究會下載句向量模型；需要網路與足夠磁碟空間。
+本機介面透過官方 `codex exec --json` 呼叫已登入 ChatGPT 的 Codex CLI。文字生成使用 Codex，網路檢索使用 Codex 的內建即時搜尋，不需要 `OPENAI_API_KEY` 或 `YDC_API_KEY`。程式強制採用 ChatGPT 登入，呼叫失敗時會停止，不會自動轉用 API Key 計費。
 
-請在專案根目錄執行以下指令。不要將 API Key 寫進程式、文件或 Git；範例的佔位文字請替換為自己的設定，且勿貼出包含密鑰的終端機紀錄。
+請先安裝 [Codex CLI](https://learn.chatgpt.com/docs/cli)，執行 `codex login`，選擇 ChatGPT 登入；用 `codex login status` 確認。需要支援 JSONL `web_search.results` 的版本；實際搜尋事件格式已於 **0.165.0-alpha.1.2** 驗證。較舊版本若未輸出結構化結果，介面會明確顯示錯誤，無法以模型文字中的網址代替。
+
+環境需求：Python 3.10 或 3.11。核心依賴指定 `dspy_ai==2.4.9`，minimal UI 指定 `streamlit==1.31.1`。其他部分依賴未固定版本，完整套件相容性仍需於實際環境驗證。首次文章內文檢索會下載本機句向量模型，需要網路與磁碟空間；它不會呼叫付費的 embeddings API。
 
 ### Windows PowerShell
+
+從專案根目錄執行：
 
 ```powershell
 py -3.11 -m venv .venv
 . .\.venv\Scripts\Activate.ps1
 python -m pip install -e .
 python -m pip install -r frontend/demo_light/requirements.txt
-$env:STORM_PROVIDER = "openai"
-$env:STORM_MODEL = "<模型名稱>"
-$env:OPENAI_API_KEY = "<模型 API Key>"
-$env:YDC_API_KEY = "<You.com API Key>"
+codex login
+codex login status
+$env:STORM_PROVIDER = "codex"
 python -m streamlit run frontend/demo_light/storm.py
 ```
 
-若 PowerShell 政策阻止啟動虛擬環境，可直接使用 `.\.venv\Scripts\python.exe` 執行上述各個 Python 指令。環境變數僅設定於目前 PowerShell 工作階段。
+若啟動虛擬環境受 PowerShell 政策阻擋，可直接以 `.\.venv\Scripts\python.exe` 執行 Python 指令。若找不到 `codex`，可將 `$env:STORM_CODEX_COMMAND` 設為 Codex 執行檔的完整路徑。終端機工作階段中的環境變數設定只影響目前工作階段。
 
 ### macOS（zsh）
 
@@ -34,27 +34,67 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
 python -m pip install -r frontend/demo_light/requirements.txt
-export STORM_PROVIDER="openai"
-export STORM_MODEL="<模型名稱>"
-export OPENAI_API_KEY="<模型 API Key>"
-export YDC_API_KEY="<You.com API Key>"
+codex login
+codex login status
+export STORM_PROVIDER="codex"
 python -m streamlit run frontend/demo_light/storm.py
 ```
 
-`STORM_PROVIDER` 與 `STORM_MODEL` 組成 LiteLLM 的 `provider/model`；也可在 `STORM_MODEL` 填入相同供應商前綴的完整名稱。其他供應商需依 LiteLLM 設定其對應的環境變數與端點。所有階段使用同一模型，並設定不同輸出長度；請選擇支援這些參數的模型。模型資格、價格與金鑰取得方式請查供應商文件。
+`STORM_MODEL` 可選填 Codex 可用的模型 ID；未設定時採 CLI 的內建預設。每次呼叫在獨立暫存目錄執行，不載入使用者 `config.toml`，保留登入授權並停用 shell、apps、hooks 與分工。呼叫會序列執行，每次逾時上限 180 秒。CLI 仍需要在使用者目錄寫入正常的執行狀態。本版本用於自己電腦上的本機操作。
 
-## 使用與限制
+## 研究來源與引用保存
 
-輸入主題後選擇「開始研究」，完成後可在「我的文章」查看文章、參考資料與研究對話。輸出存於 `frontend/demo_light/DEMO_WORKING_DIR/`，已加入 Git 忽略清單；其中可能包含主題、搜尋內容、模型輸出和來源，請自行保護。LiteLLM 也可能在使用者目錄快取呼叫內容。
+搜尋只接受 Codex **工具事件**回傳的 `text_result`：原始 URL、標題及摘錄。不從模型的最終回答擷取連結，也不把模型自行產生的文獻或網址加入來源清單。Codex 模式不會使用原有的模型推薦 Wikipedia 網址流程。
 
-主題最多 125 個字元、240 個 UTF-8 位元組及 20 個詞，禁止路徑分隔符、控制字元及 Windows 不允許的檔案名稱。介面進行基本格式檢查，不保證判斷所有不適當的用途。搜尋品質受搜尋服務、來源與語言影響；系統要求模型只依據資料並保留引用，但模型仍可能產生錯誤或不受支持的陳述。請逐一開啟原始網址核對事實、文獻及引用，勿將結果直接視為事實。
+每篇研究的輸出位於 `frontend/demo_light/DEMO_WORKING_DIR/<主題>/`：
 
-每次研究可能執行多次搜尋、問題生成、文章生成及潤稿；成本取決於模型價格、輸入與輸出 token、搜尋次數與供應商方案。研究時間與費用無固定保證，請先檢查供應商價格、額度與帳單，並從小主題開始。
+```text
+codex_search/<識別碼>.json   # 工具搜尋結果、實際查詢、時間、thread ID 與用量
+conversation_log.json       # 對話與每一回合取得的來源
+raw_search_results.json     # 原始來源對照
+url_to_info.json            # 文章引用索引與來源 metadata
+storm_gen_article_polished.txt
+```
+
+來源 metadata 保存原始查詢、實際查詢、工具事件 ID、來源 ref、取得時間及搜尋紀錄的 SHA-256。相同 URL 從不同查詢取得時會合併證據；輸出、文章引用及潤稿沿用相同來源對應。參考資料面板顯示查詢與紀錄位置，也能下載所選來源紀錄。請保留整個文章資料夾以便追溯。
+
+保存的是搜尋工具回傳的**摘錄**，不是完整原文或論文全文。搜尋索引可能過時，模型仍可能誤解摘錄或產生不受來源支持的陳述。請開啟原始連結核對事實、作者、文獻名稱與引用內容。找不到任何可用來源時，Codex 模式會停止，避免產生沒有來源的完整報告。
+
+## 額度與限制
+
+研究的模型生成與搜尋會使用 Codex 的可用額度，受帳號方案、模型、搜尋權限及工作區政策限制。不是無限使用；額度耗盡或搜尋不可用時會顯示錯誤。每篇文章包含多次模型呼叫，每次 CLI 也可能載入自身背景內容，因此用量可能比單次聊天高。
+
+預設採 1 回合、1 個額外觀點、每回合 1 組查詢並序列執行，以控制呼叫數。執行時間、實際額度消耗與文章品質沒有固定保證。[官方登入說明](https://learn.chatgpt.com/docs/auth)、[網路搜尋設定](https://learn.chatgpt.com/docs/web-search)、[非互動呼叫](https://learn.chatgpt.com/docs/non-interactive-mode)。
+
+主題最多 125 個字元、240 個 UTF-8 位元組及 20 個詞，禁止路徑分隔符、控制字元及 Windows 無法使用的檔案名稱。資料與搜尋紀錄已被 Git 忽略，但可能包含研究主題、摘錄與模型輸出，請自行保護。
+
+## 可選：明確使用 API 供應商
+
+若有需要，可將 `STORM_PROVIDER` 設為 LiteLLM 的供應商，例如 `openai`；再設定 `STORM_MODEL`、供應商金鑰及 `YDC_API_KEY`。此模式的模型與搜尋另依供應商計費，與 Codex 模式不會自動互相切換。修改設定後重新啟動 Streamlit，使 runner 重新建立。不要把任何金鑰寫入 Git。
 
 ## 測試
+
+離線自動化測試不呼叫外部服務：
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-測試包含離線的主題驗證、介面字典、提示詞約束與引用處理；它們不能證明外部 API、Streamlit 畫面、檢索結果或模型生成品質。完整端到端驗證需安裝所有依賴、設定有效 API Key、使用可用的模型及網路，並會產生費用。
+包含主題、i18n、提示詞、引用格式、Codex 事件解析、錯誤處理與來源保存。真實 DSPy 契約測試會在未安裝 DSPy 時標記 skip。
+
+本次 DSPy 契約測試在隔離虛擬環境使用 `dspy_ai==2.4.9` 與 `pyarrow==20.0.0` 驗證，包含 `Predict` 和 `ChainOfThought` 的繁中及引用解析。這不等於所有未固定版本的依賴組合皆已通過。
+
+以下為**選擇性實際測試**，會消耗 Codex 額度，執行一次生成、一次搜尋並核對保存的證據：
+
+```powershell
+# Windows PowerShell
+$env:STORM_RUN_CODEX_LIVE = "1"
+python -m unittest discover -s tests -p test_codex_live.py -v
+```
+
+```bash
+# macOS
+STORM_RUN_CODEX_LIVE=1 python -m unittest discover -s tests -p test_codex_live.py -v
+```
+
+實際測試與完整 Streamlit/STORM 端到端測試是不同層次。未安裝完整依賴或未實際操作畫面時，不能據此宣稱整個產品流程已通過。
